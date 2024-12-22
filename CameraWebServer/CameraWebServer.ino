@@ -28,9 +28,32 @@
 const char *ssid = "*";       // Your WiFi SSID
 const char *password = "*";  // Your WiFi Password
 
+// Motor 1 pin definitions
+int ENA1 = 4;   // PWM pin for Motor 1
+int IN1_1 = 2;  // Direction pin 1 for Motor 1
+int IN2_1 = 14; // Direction pin 2 for Motor 1
+
+// Motor 2 pin definitions
+int ENA2 = 15;  // PWM pin for Motor 2
+int IN1_2 = 13; // Direction pin 1 for Motor 2
+int IN2_2 = 12; // Direction pin 2 for Motor 2
+
+// PWM configuration
+const int frequency = 500;           // PWM frequency in Hz
+const int resolutionPWM = 8;         // PWM resolution in bits
+
 WiFiClient net;
 MQTTClient client;
 
+// Forward declarations of functions
+void connectMQTT();
+void onMQTTMessage(String &topic, String &payload);
+void cameraInit();
+void grabImage();
+void motorTask(void *parameter);
+void mqttCameraTask(void *parameter);
+
+// Function to connect to MQTT broker
 void connectMQTT()
 {
   Serial.print("Connecting to MQTT broker at ");
@@ -49,13 +72,16 @@ void connectMQTT()
   client.subscribe(ESP32CAM_COMMAND_TOPIC);
 }
 
+// Callback function for MQTT messages
 void onMQTTMessage(String &topic, String &payload) {
   if (topic == ESP32CAM_COMMAND_TOPIC) {
     Serial.print("Received command: ");
     Serial.println(payload);
+    // Handle commands as needed
   }
 }
 
+// Function to initialize the camera
 void cameraInit(){
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
@@ -92,37 +118,17 @@ void cameraInit(){
 
   sensor_t * s = esp_camera_sensor_get();
   if (s != NULL) {
-    // Example “make it brighter / more visible” adjustments.
-    // Tweak the -2..2 or 0..2 parameters as you see fit.
     s->set_brightness(s, 1);       // -2 to 2
-    // s->set_contrast(s, 1);         // -2 to 2
     s->set_saturation(s, 2);       // -2 to 2
-    // s->set_special_effect(s, 0);   // 0 = no effect
-    // s->set_whitebal(s, 1);         // enable/disable
-    // s->set_awb_gain(s, 1);         // enable/disable AWB gain
-    // s->set_wb_mode(s, 0);          // 0: Auto; 1: Sunny; 2: Cloudy; 3: Office; 4: Home
     s->set_exposure_ctrl(s, 1);    // enable auto-exposure
-    // s->set_aec2(s, 1);             // new AEC algorithm
     s->set_ae_level(s, 2);         // -2 to +2
-    // If you want a bit longer/slower exposure (brighter in low light):
-    // s->set_aec_value(s, 500);    // 0 to 1200 (only if auto-exposure is disabled)
-    // s->set_gain_ctrl(s, 1);        // enable auto-gain
-    // s->set_agc_gain(s, 15);      // set manual gain if auto-gain disabled
-    // s->set_gainceiling(s, (gainceiling_t)0);
-    // s->set_bpc(s, 0);              // black pixel correction
-    // s->set_wpc(s, 1);              // white pixel correction
-    // s->set_raw_gma(s, 1);
-    // s->set_lenc(s, 1);             // lens correction
-    // s->set_hmirror(s, 0);
-    // s->set_vflip(s, 0);
-    // s->set_dcw(s, 1);
-    // s->set_colorbar(s, 0);
   }
   else {
     Serial.println("Failed to get sensor_t object.");
   }
 }
 
+// Function to grab and publish an image
 void grabImage(){
   camera_fb_t * fb = esp_camera_fb_get();
   if(fb != NULL && fb->format == PIXFORMAT_JPEG && fb->len < 1000000){
@@ -139,11 +145,89 @@ void grabImage(){
     }
   }
   esp_camera_fb_return(fb);
-  delay(100); // Publish every 100 ms
+  // No delay here as this is handled in the task
+}
+
+// Function to set motor direction
+void setMotorDirection(int motor, bool forward) {
+  if (motor == 1) {
+    digitalWrite(IN1_1, forward ? HIGH : LOW);
+    digitalWrite(IN2_1, forward ? LOW : HIGH);
+  } else if (motor == 2) {
+    digitalWrite(IN1_2, forward ? HIGH : LOW);
+    digitalWrite(IN2_2, forward ? LOW : HIGH);
+  }
+}
+
+// Function to set motor speed
+void setMotorSpeed(int motor, int speed) {
+  int dutyCycle = constrain(speed, 0, 255); 
+  if (motor == 1) {
+    ledcWrite(ENA1, dutyCycle);
+  } else if (motor == 2) {
+    ledcWrite(ENA2, dutyCycle);
+  }
+}
+
+// Motor control task
+void motorTask(void *parameter){
+  while (true) {
+    // Example: Set Motor 1 to forward at full speed
+    setMotorDirection(1, true);
+    setMotorSpeed(1, 255);
+    vTaskDelay(pdMS_TO_TICKS(5000)); // 5 seconds
+
+    // Example: Set Motor 2 to backward at half speed
+    setMotorDirection(2, false);
+    setMotorSpeed(2, 128);
+    vTaskDelay(pdMS_TO_TICKS(5000)); // 5 seconds
+
+    // Stop both motors
+    setMotorSpeed(1, 0);
+    setMotorSpeed(2, 0);
+    vTaskDelay(pdMS_TO_TICKS(2000)); // 2 seconds
+  }
+}
+
+// MQTT and Camera handling task
+void mqttCameraTask(void *parameter){
+  while (true) {
+    if (!client.connected()) {
+      connectMQTT();
+    }
+    client.loop();
+    grabImage();
+    vTaskDelay(pdMS_TO_TICKS(100)); // Adjust as needed
+  }
 }
 
 void setup() {
   Serial.begin(115200);
+
+  // Set motor 1 direction pins as outputs
+  pinMode(IN1_1, OUTPUT);
+  pinMode(IN2_1, OUTPUT);
+  digitalWrite(IN1_1, LOW);
+  digitalWrite(IN2_1, LOW);
+
+  // Set motor 2 direction pins as outputs
+  pinMode(IN1_2, OUTPUT);
+  pinMode(IN2_2, OUTPUT);
+  digitalWrite(IN1_2, LOW);
+  digitalWrite(IN2_2, LOW);
+
+  // Attach PWM to Motor 1 enable pin
+  if (!ledcAttach(ENA1, frequency, resolutionPWM)) { // Corrected to ledcAttachPin
+    Serial.println("Error attaching LEDC to Motor 1 ENA pin");
+    while (true); // Halt execution
+  }
+
+  // Attach PWM to Motor 2 enable pin
+  if (!ledcAttach(ENA2, frequency, resolutionPWM)) { // Corrected to ledcAttachPin
+    Serial.println("Error attaching LEDC to Motor 2 ENA pin");
+    while (true); // Halt execution
+  }
+
   cameraInit();
 
   // Connect to Wi-Fi
@@ -161,15 +245,30 @@ void setup() {
   Serial.print("ESP32 IP Address: ");
   Serial.println(WiFi.localIP());
 
-  // Connect to MQTT Broker
+  // Initialize MQTT
   client.onMessage(onMQTTMessage);
   connectMQTT();
+
+  // Create FreeRTOS tasks
+  xTaskCreate(
+    motorTask,          // Task function
+    "Motor Control",    // Task name
+    2048,               // Stack size
+    NULL,               // Task input parameter
+    1,                  // Priority
+    NULL                // Task handle
+  );
+
+  xTaskCreate(
+    mqttCameraTask,     // Task function
+    "MQTT and Camera",  // Task name
+    8192,               // Stack size (increased for camera handling)
+    NULL,               // Task input parameter
+    1,                  // Priority
+    NULL                // Task handle
+  );
 }
 
 void loop() {
-  if (!client.connected()) {
-    connectMQTT();
-  }
-  client.loop();
-  grabImage();
+  // Empty loop as tasks handle everything
 }
