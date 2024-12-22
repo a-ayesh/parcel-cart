@@ -23,6 +23,7 @@
 #define MQTT_BROKER_IP "192.168.137.24" // Your PC's IP address
 #define MQTT_BROKER_PORT 1883
 #define ESP32CAM_PUBLISH_TOPIC   "esp32/cam_0"
+#define ESP32CAM_COMMAND_TOPIC   "esp32/cam_commands"
 
 const char *ssid = "*";       // Your WiFi SSID
 const char *password = "*";  // Your WiFi Password
@@ -39,12 +40,20 @@ void connectMQTT()
 
   client.begin(MQTT_BROKER_IP, MQTT_BROKER_PORT, net);
 
-  while (!client.connect("")) {
+  while (!client.connect("ESP32CAM_Client")) {
     Serial.print(".");
     delay(1000);
   }
 
   Serial.println("\nConnected to MQTT broker");
+  client.subscribe(ESP32CAM_COMMAND_TOPIC);
+}
+
+void onMQTTMessage(String &topic, String &payload) {
+  if (topic == ESP32CAM_COMMAND_TOPIC) {
+    Serial.print("Received command: ");
+    Serial.println(payload);
+  }
 }
 
 void cameraInit(){
@@ -153,7 +162,7 @@ void setup() {
   Serial.println(WiFi.localIP());
 
   // Connect to MQTT Broker
-  client.begin(MQTT_BROKER_IP, MQTT_BROKER_PORT, net);
+  client.onMessage(onMQTTMessage);
   connectMQTT();
 }
 
