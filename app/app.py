@@ -40,15 +40,33 @@ mqtt_thread = threading.Thread(target=mqtt_loop)
 mqtt_thread.daemon = True
 mqtt_thread.start()
 
-# HTML frontend with JavaScript to refresh the image periodically
+# Enhanced HTML frontend with Bootstrap
 html_content = """
 <!DOCTYPE html>
 <html>
 <head>
     <title>ESP32-CAM Live Stream</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { text-align: center; }
-        img { max-width: 100%; height: auto; }
+        body { 
+            background-color: #f8f9fa; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            padding-top: 50px;
+        }
+        .container { 
+            max-width: 800px; 
+            text-align: center; 
+        }
+        img { 
+            width: 100%; 
+            border-radius: 10px; 
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2); 
+        }
+        .header { 
+            margin-bottom: 20px; 
+        }
     </style>
     <script>
         function updateImage() {
@@ -59,8 +77,19 @@ html_content = """
     </script>
 </head>
 <body>
-    <h1>ESP32-CAM Live Stream</h1>
-    <img id="cam_image" src="/latest_image" alt="Camera Feed">
+    <div class="container">
+        <div class="header">
+            <h1 class="mb-3">ESP32-CAM Live Stream</h1>
+            <p class="text-muted">Real-time video feed from your ESP32-CAM device</p>
+        </div>
+        <div class="card">
+            <img id="cam_image" src="/latest_image" alt="Camera Feed" class="card-img-top">
+            <div class="card-body">
+                <p class="card-text">Refreshing every 100 ms</p>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
 """
