@@ -69,8 +69,8 @@ void cameraInit(){
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = FRAMESIZE_VGA; // 640x480
-  config.jpeg_quality = 10;
+  config.frame_size = FRAMESIZE_QVGA;
+  config.jpeg_quality = 20;
   config.fb_count = 2;
 
   // Initialize the camera
@@ -79,6 +79,38 @@ void cameraInit(){
     Serial.printf("Camera init failed with error 0x%x", err);
     ESP.restart();
     return;
+  }
+
+  sensor_t * s = esp_camera_sensor_get();
+  if (s != NULL) {
+    // Example “make it brighter / more visible” adjustments.
+    // Tweak the -2..2 or 0..2 parameters as you see fit.
+    s->set_brightness(s, 1);       // -2 to 2
+    // s->set_contrast(s, 1);         // -2 to 2
+    s->set_saturation(s, 2);       // -2 to 2
+    // s->set_special_effect(s, 0);   // 0 = no effect
+    // s->set_whitebal(s, 1);         // enable/disable
+    // s->set_awb_gain(s, 1);         // enable/disable AWB gain
+    // s->set_wb_mode(s, 0);          // 0: Auto; 1: Sunny; 2: Cloudy; 3: Office; 4: Home
+    s->set_exposure_ctrl(s, 1);    // enable auto-exposure
+    // s->set_aec2(s, 1);             // new AEC algorithm
+    s->set_ae_level(s, 2);         // -2 to +2
+    // If you want a bit longer/slower exposure (brighter in low light):
+    // s->set_aec_value(s, 500);    // 0 to 1200 (only if auto-exposure is disabled)
+    // s->set_gain_ctrl(s, 1);        // enable auto-gain
+    // s->set_agc_gain(s, 15);      // set manual gain if auto-gain disabled
+    // s->set_gainceiling(s, (gainceiling_t)0);
+    // s->set_bpc(s, 0);              // black pixel correction
+    // s->set_wpc(s, 1);              // white pixel correction
+    // s->set_raw_gma(s, 1);
+    // s->set_lenc(s, 1);             // lens correction
+    // s->set_hmirror(s, 0);
+    // s->set_vflip(s, 0);
+    // s->set_dcw(s, 1);
+    // s->set_colorbar(s, 0);
+  }
+  else {
+    Serial.println("Failed to get sensor_t object.");
   }
 }
 
@@ -98,7 +130,7 @@ void grabImage(){
     }
   }
   esp_camera_fb_return(fb);
-  // delay(1000); // Publish every second; adjust as needed
+  delay(100); // Publish every 100 ms
 }
 
 void setup() {

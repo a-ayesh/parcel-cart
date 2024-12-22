@@ -55,7 +55,7 @@ html_content = """
             var img = document.getElementById("cam_image");
             img.src = "/latest_image?" + new Date().getTime();
         }
-        setInterval(updateImage, 1); // Update every second
+        setInterval(updateImage, 100); // Update every 100 ms
     </script>
 </head>
 <body>
