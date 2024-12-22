@@ -29,21 +29,28 @@ const char *ssid = "*";       // Your WiFi SSID
 const char *password = "*";  // Your WiFi Password
 
 // Motor 1 pin definitions
-int ENA1 = 4;   // PWM pin for Motor 1
-int IN1_1 = 2;  // Direction pin 1 for Motor 1
-int IN2_1 = 14; // Direction pin 2 for Motor 1
+const int ENA1 = 4;   // PWM pin for Motor 1
+const int IN1_1 = 2;  // Direction pin 1 for Motor 1
+const int IN2_1 = 14; // Direction pin 2 for Motor 1
 
 // Motor 2 pin definitions
-int ENA2 = 15;  // PWM pin for Motor 2
-int IN1_2 = 13; // Direction pin 1 for Motor 2
-int IN2_2 = 12; // Direction pin 2 for Motor 2
+const int ENA2 = 15;  // PWM pin for Motor 2
+const int IN1_2 = 13; // Direction pin 1 for Motor 2
+const int IN2_2 = 12; // Direction pin 2 for Motor 2
 
 // PWM configuration
 const int frequency = 500;           // PWM frequency in Hz
 const int resolutionPWM = 8;         // PWM resolution in bits
 
+// MQTT and WiFi clients
 WiFiClient net;
 MQTTClient client;
+
+// Define motor commands
+enum Command { STOP, UP, DOWN, LEFT, RIGHT };
+
+// FreeRTOS queue handle for motor commands
+QueueHandle_t motorCommandQueue;
 
 // Forward declarations of functions
 void connectMQTT();
@@ -77,7 +84,30 @@ void onMQTTMessage(String &topic, String &payload) {
   if (topic == ESP32CAM_COMMAND_TOPIC) {
     Serial.print("Received command: ");
     Serial.println(payload);
-    // Handle commands as needed
+
+    Command cmd = STOP; // Default to STOP
+
+    if (payload.equalsIgnoreCase("UP")) {
+      cmd = UP;
+    }
+    else if (payload.equalsIgnoreCase("DOWN")) {
+      cmd = DOWN;
+    }
+    else if (payload.equalsIgnoreCase("LEFT")) {
+      cmd = LEFT;
+    }
+    else if (payload.equalsIgnoreCase("RIGHT")) {
+      cmd = RIGHT;
+    }
+    else {
+      Serial.println("Unknown command received.");
+      return;
+    }
+
+    // Send the command to the motor command queue
+    if (xQueueSend(motorCommandQueue, &cmd, (TickType_t)10) != pdPASS) {
+      Serial.println("Failed to send command to queue.");
+    }
   }
 }
 
@@ -171,21 +201,56 @@ void setMotorSpeed(int motor, int speed) {
 
 // Motor control task
 void motorTask(void *parameter){
+  Command currentCmd = STOP;
+
   while (true) {
-    // Example: Set Motor 1 to forward at full speed
-    setMotorDirection(1, true);
-    setMotorSpeed(1, 255);
-    vTaskDelay(pdMS_TO_TICKS(5000)); // 5 seconds
+    // Check if a new command is available
+    if (xQueueReceive(motorCommandQueue, &currentCmd, (TickType_t)0) == pdPASS) {
+      switch(currentCmd){
+        case UP:
+          // Move forward: Both motors forward at full speed
+          setMotorDirection(1, true);
+          setMotorDirection(2, true);
+          setMotorSpeed(1, 255);
+          setMotorSpeed(2, 255);
+          Serial.println("Action: MOVE FORWARD");
+          break;
+        case DOWN:
+          // Move backward: Both motors backward at full speed
+          setMotorDirection(1, false);
+          setMotorDirection(2, false);
+          setMotorSpeed(1, 255);
+          setMotorSpeed(2, 255);
+          Serial.println("Action: MOVE BACKWARD");
+          break;
+        case LEFT:
+          // Turn left: Motor 1 backward, Motor 2 forward
+          setMotorDirection(1, false);
+          setMotorDirection(2, true);
+          setMotorSpeed(1, 255);
+          setMotorSpeed(2, 255);
+          Serial.println("Action: TURN LEFT");
+          break;
+        case RIGHT:
+          // Turn right: Motor 1 forward, Motor 2 backward
+          setMotorDirection(1, true);
+          setMotorDirection(2, false);
+          setMotorSpeed(1, 255);
+          setMotorSpeed(2, 255);
+          Serial.println("Action: TURN RIGHT");
+          break;
+        case STOP:
+        default:
+          // Stop both motors
+          setMotorSpeed(1, 0);
+          setMotorSpeed(2, 0);
+          Serial.println("Action: STOP");
+          break;
+      }
+    }
 
-    // Example: Set Motor 2 to backward at half speed
-    setMotorDirection(2, false);
-    setMotorSpeed(2, 128);
-    vTaskDelay(pdMS_TO_TICKS(5000)); // 5 seconds
-
-    // Stop both motors
-    setMotorSpeed(1, 0);
-    setMotorSpeed(2, 0);
-    vTaskDelay(pdMS_TO_TICKS(2000)); // 2 seconds
+    // Optional: Add a short delay to prevent task hogging
+    vTaskDelay(pdMS_TO_TICKS(50));
   }
 }
 
@@ -204,13 +269,12 @@ void mqttCameraTask(void *parameter){
 void setup() {
   Serial.begin(115200);
 
-  // Set motor 1 direction pins as outputs
+  // Initialize motor direction pins as outputs
   pinMode(IN1_1, OUTPUT);
   pinMode(IN2_1, OUTPUT);
   digitalWrite(IN1_1, LOW);
   digitalWrite(IN2_1, LOW);
 
-  // Set motor 2 direction pins as outputs
   pinMode(IN1_2, OUTPUT);
   pinMode(IN2_2, OUTPUT);
   digitalWrite(IN1_2, LOW);
@@ -248,6 +312,13 @@ void setup() {
   // Initialize MQTT
   client.onMessage(onMQTTMessage);
   connectMQTT();
+
+  // Create the motor command queue
+  motorCommandQueue = xQueueCreate(10, sizeof(Command));
+  if (motorCommandQueue == NULL) {
+    Serial.println("Failed to create motor command queue.");
+    while (true); // Halt execution
+  }
 
   // Create FreeRTOS tasks
   xTaskCreate(
