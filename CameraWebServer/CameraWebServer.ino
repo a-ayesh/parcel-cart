@@ -99,6 +99,9 @@ void onMQTTMessage(String &topic, String &payload) {
     else if (payload.equalsIgnoreCase("RIGHT")) {
       cmd = RIGHT;
     }
+    else if (payload.equalsIgnoreCase("STOP")) {
+      cmd = STOP;
+    }
     else {
       Serial.println("Unknown command received.");
       return;
@@ -240,6 +243,11 @@ void motorTask(void *parameter){
           Serial.println("Action: TURN RIGHT");
           break;
         case STOP:
+          // Stop both motors
+          setMotorSpeed(1, 0);
+          setMotorSpeed(2, 0);
+          Serial.println("Action: STOP");
+          break;
         default:
           // Stop both motors
           setMotorSpeed(1, 0);

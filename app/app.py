@@ -109,6 +109,21 @@ html_content = """
                 body: JSON.stringify({ command: command })
             });
         });
+
+        document.addEventListener('keyup', function(event) {
+            // Send "STOP" command 5 times
+            for (let i = 0; i < 5; i++) {
+                setTimeout(() => {
+                    fetch('/command', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ command: 'STOP' })
+                    });
+                }, i * 50); // 50 ms interval between each command
+            }
+        });
     </script>
 </head>
 <body>
@@ -150,3 +165,6 @@ def send_command(cmd: Command):
     client.disconnect()
     return {"status": "Command sent"}
 
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
